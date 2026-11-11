@@ -1,0 +1,16 @@
+# swift-projection
+
+Use this package when you need to map a view volume in three dimensions onto normalised coordinates: a perspective frustum, where things shrink with distance, or an orthographic box, where they do not. Start from `Projection<Scalar>`: give it the kind, the window on the near plane, the near and far distances and the depth range you want, then call `clip(_:)` for homogeneous clip coordinates, `normalized(_:)` for the point after the perspective divide, or `eye(_:)` to go back. It describes one projection and applies it to points; it holds no camera position or orientation. For the projection as a 4×4 matrix that multiplies with rotations and scales, enable the `Projection` trait of swift-matrix, which builds `Matrix<4, 4, Scalar>` from a `Projection`.
+
+## Laws
+
+- Eye space is right-handed and the eye looks along −z: x is right, y is up, and a point in front of the eye has negative z. `near` and `far` are distances along the view direction, so the near plane is z = −`near`. `left`, `right`, `bottom` and `top` bound the window on the near plane.
+- Construction fails with `.nonfinite` when a bound is NaN or infinite, with `.empty` unless `left < right`, `bottom < top` and `near < far`, and with `.behindEye` when a perspective `near` is not positive. The one infinity allowed is a perspective `far` of `+infinity`. An orthographic `near` may be zero or negative. Decoding enforces the same rules.
+- The view volume maps onto x and y in `-1...1` and depth in `depth.range`: `-1...1` for `.symmetric` and `0...1` for `.unit`. The near plane maps to the lower depth bound and the far plane to the upper; the window's left, right, bottom and top edges map to x = −1, x = 1, y = −1 and y = 1. Nothing is clipped: points outside the volume map outside those ranges.
+- `clip(_:)` is the `coefficients` rows applied to (x, y, z, 1), each row summed from zero in column order. `coefficients` is row-major and treats points as columns, as swift-matrix does.
+- In a perspective projection the fourth clip coordinate is −z, the distance in front of the eye, and points on one line through the eye share their normalised x and y. In an orthographic projection it is always 1, the map is affine, and x and y do not depend on z.
+- `normalized(_:)` is the clip coordinates divided by the fourth, and nil when the fourth is zero, that is for a perspective point in the plane of the eye. A perspective point behind the eye has a negative fourth coordinate and is returned as the projective map gives it, mirrored.
+- `eye(_:)` inverts `normalized(_:)`: `eye(normalized(p))` is `p` up to rounding. It is nil for a normalised point with no finite preimage, as at the upper depth bound of a projection with an infinite far plane.
+- With an infinite far plane, depth increases with distance and stays below the upper bound.
+- `perspective(fieldOfView:aspect:near:far:depth:)` centres the window on the view axis, with half height `near · tan(fieldOfView / 2)` and half width that times `aspect`. `orthographic(width:height:near:far:depth:)` centres a window of that width and height. Both then apply the construction rules, so a field of view of zero is `.empty`.
+- Equality and hashing compare the stored bounds, kind and depth range.
