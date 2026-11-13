@@ -171,6 +171,22 @@ extension Projection where Scalar: Trigonometry.Circular {
     }
 }
 
+extension Projection where Scalar: Trigonometry.Circular {
+
+    /// The focal length: the distance from the eye at which a window of `height` fills the vertical field
+    /// of view, `height / 2 / tan(fieldOfView / 2)`, in the unit of `height`. For a viewport height in pixels
+    /// it is the focal length in pixels, so a length `l` at distance `d` spans `l · focal / d` pixels.
+    public static func focal(fieldOfView: Radian<Scalar>, height: Scalar) -> Scalar {
+        height / 2 / Scalar.tan(fieldOfView.underlying / 2)
+    }
+
+    /// The vertical field of view in which a window of `height` at distance `focal` fills the view,
+    /// `2 · atan(height / 2 / focal)`: the inverse of `focal(fieldOfView:height:)`.
+    public static func field(focal: Scalar, height: Scalar) -> Radian<Scalar> {
+        Radian(_unchecked: 2 * Scalar.atan(height / 2 / focal))
+    }
+}
+
 #if !hasFeature(Embedded)
     extension Projection {
         private enum CodingKeys: String, CodingKey {

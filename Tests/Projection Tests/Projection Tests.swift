@@ -234,5 +234,34 @@ extension `Projection Tests` {
             )
             #expect(throws: DecodingError.self) { try JSONDecoder().decode(Projection<Double>.self, from: invalid) }
         }
+
+        @Test(arguments: [0.1, 0.6, 1.2, 2.5])
+        func `The focal length and the field of view are inverse for a viewport height`(fieldOfView: Double) {
+            let focalLength = Projection<Double>.focal(fieldOfView: Radian(_unchecked: fieldOfView), height: 1080)
+            #expect(abs(Projection<Double>.field(focal: focalLength, height: 1080).underlying - fieldOfView) < 1e-12)
+            let back = Projection<Double>.focal(
+                fieldOfView: Projection<Double>.field(focal: 1500, height: 1080),
+                height: 1080
+            )
+            #expect(abs(back - 1500) < 1e-9)
+        }
+
+        @Test
+        func `The focal length scales a length at a distance into the viewport`() throws {
+            let fieldOfView = Radian<Double>(_unchecked: 0.7)
+            let focalLength = Projection<Double>.focal(fieldOfView: fieldOfView, height: 1080)
+            let projection = try Projection<Double>.perspective(
+                fieldOfView: fieldOfView,
+                aspect: 16.0 / 9.0,
+                near: 1,
+                far: 100,
+                depth: .unit
+            )
+            let distance = 8.0
+            let span = 0.5
+            let normalized = try #require(projection.normalized(Point(x: 0, y: span, z: -distance)))
+            #expect(abs(normalized.y * 1080 / 2 - span * focalLength / distance) < 1e-9)
+            #expect(abs(Projection<Double>.focal(fieldOfView: .init(_unchecked: Double.pi / 2), height: 1080) - 540) < 1e-9)
+        }
     }
 }
