@@ -1,4 +1,5 @@
 extension Projection {
+    @frozen
     public enum Depth: String, Hashable, Sendable, CaseIterable {
         case symmetric
         case unit
@@ -6,6 +7,7 @@ extension Projection {
 }
 
 extension Projection.Depth {
+    @inlinable
     public var range: ClosedRange<Scalar> {
         switch self {
         case .symmetric: -1...1

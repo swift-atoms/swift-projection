@@ -1,4 +1,5 @@
 extension Projection.Viewport {
+    @frozen
     public enum Direction: String, Hashable, Sendable, CaseIterable {
         /// The image's y grows upward, so a normalised y of 1 lands on its greatest y.
         case up

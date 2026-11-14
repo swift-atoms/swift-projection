@@ -1,6 +1,7 @@
 extension Projection {
     /// The rectangle of an image that normalised device coordinates map onto: x from −1 to 1 across
     /// its width, and y from −1 to 1 along its height in the `direction` the image's y grows.
+    @frozen
     public struct Viewport {
         /// The x of the rectangle's left edge, where a normalised x of −1 lands.
         public let x: Scalar
@@ -12,6 +13,7 @@ extension Projection {
         /// Which way the image's y grows, and so which edge a normalised y of 1 lands on.
         public let direction: Direction
 
+        @inlinable
         public init(x: Scalar, y: Scalar, width: Scalar, height: Scalar, direction: Direction) throws(Error) {
             guard x.isFinite, y.isFinite, width.isFinite, height.isFinite else { throw .nonfinite }
             guard width > 0, height > 0 else { throw .empty }
@@ -33,6 +35,7 @@ extension Projection.Viewport {
     /// The point of the image at normalised coordinates: `x + (n.x + 1) / 2 · width` across, and along
     /// the height `y + (1 − n.y) / 2 · height` when y grows downward or `y + (n.y + 1) / 2 · height`
     /// when it grows upward. It is affine, and points outside −1…1 land outside the rectangle.
+    @inlinable
     public func point(_ normalized: Point<2, Scalar>) -> Point<2, Scalar> {
         let across = x + (normalized.x + 1) / 2 * width
         switch direction {
@@ -43,6 +46,7 @@ extension Projection.Viewport {
 
     /// The normalised coordinates of a point of the image: the inverse of `point(_:)`, so
     /// `normalized(point(n))` is `n` up to rounding.
+    @inlinable
     public func normalized(_ point: Point<2, Scalar>) -> Point<2, Scalar> {
         let across = 2 * (point.x - x) / width - 1
         switch direction {

@@ -1,4 +1,5 @@
 extension Projection {
+    @frozen
     public enum Kind: String, Hashable, Sendable, CaseIterable {
         case perspective
         case orthographic

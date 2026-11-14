@@ -1,3 +1,4 @@
+@frozen
 public struct Projection<Scalar: BinaryFloatingPoint> {
     public let kind: Kind
     public let left: Scalar
@@ -8,6 +9,7 @@ public struct Projection<Scalar: BinaryFloatingPoint> {
     public let far: Scalar
     public let depth: Depth
 
+    @inlinable
     public init(
         _ kind: Kind,
         left: Scalar,
@@ -40,6 +42,7 @@ extension Projection: Sendable where Scalar: Sendable {}
 
 extension Projection {
 
+    @inlinable
     public var coefficients: InlineArray<4, InlineArray<4, Scalar>> {
         let width = right - left
         let height = top - bottom
@@ -89,6 +92,7 @@ extension Projection {
         return rows
     }
 
+    @inlinable
     public func clip(_ point: Point<3, Scalar>) -> Vector<4, Scalar> {
         let rows = coefficients
         return Vector(
@@ -101,12 +105,14 @@ extension Projection {
         )
     }
 
+    @inlinable
     public func normalized(_ point: Point<3, Scalar>) -> Point<3, Scalar>? {
         let clip = clip(point)
         guard clip[3] != 0 else { return nil }
         return Point(x: clip[0] / clip[3], y: clip[1] / clip[3], z: clip[2] / clip[3])
     }
 
+    @inlinable
     public func eye(_ normalized: Point<3, Scalar>) -> Point<3, Scalar>? {
         let rows = coefficients
         switch kind {
@@ -141,6 +147,7 @@ extension Projection {
     /// for the coefficients c; a negative distance gives the mirrored point behind the eye that projects
     /// to the same coordinates, and a distance of zero the eye itself, which projects nowhere. In an
     /// orthographic projection x and y do not depend on the distance.
+    @inlinable
     public func eye(_ normalized: Point<2, Scalar>, distance: Scalar) -> Point<3, Scalar> {
         let rows = coefficients
         let z = -distance
@@ -174,6 +181,7 @@ extension Projection {
     /// for a radius that is negative or not finite. The unit is the vertical one: in normalised x the same
     /// length is `c00 / c11` times as long, so in a viewport the outline measures the same both ways only
     /// when the viewport's aspect equals the window's.
+    @inlinable
     public func radius(of radius: Scalar, at center: Point<3, Scalar>) -> Scalar? {
         guard radius >= 0, radius.isFinite else { return nil }
         let scale = coefficients[1][1]
@@ -186,6 +194,7 @@ extension Projection {
     }
 
     /// `radius(of:at:)` in the units of a viewport: times half the viewport's height.
+    @inlinable
     public func radius(of radius: Scalar, at center: Point<3, Scalar>, in viewport: Viewport) -> Scalar? {
         self.radius(of: radius, at: center).map { $0 * viewport.height / 2 }
     }
@@ -196,6 +205,7 @@ extension Projection {
     /// always a valid projection; an infinite far plane mixed with a finite one stays infinite. Two
     /// projections of different kinds or depth ranges, or a share outside 0 to 1 whose bounds make no
     /// view volume, give no mix: this projection below a share of 1 and the other from 1 on.
+    @inlinable
     public func interpolated(to other: Self, at share: Scalar) -> Self {
         if share == 0 { return self }
         if share == 1 { return other }
@@ -221,6 +231,7 @@ extension Projection {
 
 extension Projection {
 
+    @inlinable
     public static func orthographic(
         width: Scalar,
         height: Scalar,
@@ -243,6 +254,7 @@ extension Projection {
 
 extension Projection where Scalar: Trigonometry.Circular {
 
+    @inlinable
     public static func perspective(
         fieldOfView: Radian<Scalar>,
         aspect: Scalar,
@@ -270,12 +282,14 @@ extension Projection where Scalar: Trigonometry.Circular {
     /// The focal length: the distance from the eye at which a window of `height` fills the vertical field
     /// of view, `height / 2 / tan(fieldOfView / 2)`, in the unit of `height`. For a viewport height in pixels
     /// it is the focal length in pixels, so a length `l` at distance `d` spans `l · focal / d` pixels.
+    @inlinable
     public static func focal(fieldOfView: Radian<Scalar>, height: Scalar) -> Scalar {
         height / 2 / Scalar.tan(fieldOfView.underlying / 2)
     }
 
     /// The vertical field of view in which a window of `height` at distance `focal` fills the view,
     /// `2 · atan(height / 2 / focal)`: the inverse of `focal(fieldOfView:height:)`.
+    @inlinable
     public static func field(focal: Scalar, height: Scalar) -> Radian<Scalar> {
         Radian(_unchecked: 2 * Scalar.atan(height / 2 / focal))
     }
