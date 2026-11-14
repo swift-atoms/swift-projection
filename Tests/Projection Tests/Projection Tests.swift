@@ -265,3 +265,138 @@ extension `Projection Tests` {
         }
     }
 }
+
+extension `Projection Tests` {
+    @Suite
+    struct `Unprojection, ball radius and interpolation` {
+        private func projection(
+            _ kind: Projection<Double>.Kind,
+            _ depth: Projection<Double>.Depth,
+            far: Double = 40
+        ) throws -> Projection<Double> {
+            try Projection(kind, left: -2, right: 6, bottom: -1, top: 3, near: 0.5, far: far, depth: depth)
+        }
+
+        @Test(arguments: Projection<Double>.Kind.allCases, Projection<Double>.Depth.allCases)
+        func `Projecting the unprojected point gives the normalised point back over a grid`(
+            kind: Projection<Double>.Kind,
+            depth: Projection<Double>.Depth
+        ) throws {
+            let projection = try projection(kind, depth)
+            let steps = stride(from: -1.5, through: 1.5, by: 0.25)
+            for x in steps {
+                for y in steps {
+                    for distance in [0.5, 1, 7.3, 40, 250] {
+                        let eye = projection.eye(Point(x: x, y: y), distance: distance)
+                        #expect(eye.z == -distance)
+                        let back = try #require(projection.normalized(eye))
+                        #expect(abs(back.x - x) <= 1e-12 && abs(back.y - y) <= 1e-12)
+                    }
+                }
+            }
+        }
+
+        @Test(arguments: Projection<Double>.Kind.allCases, Projection<Double>.Depth.allCases)
+        func `Unprojecting at the point's own distance returns the point`(
+            kind: Projection<Double>.Kind,
+            depth: Projection<Double>.Depth
+        ) throws {
+            let projection = try projection(kind, depth)
+            for point in [
+                Point<3, Double>(x: 0.25, y: -0.5, z: -1), Point(x: 5, y: 2.5, z: -39), Point(x: -30, y: 12, z: -7),
+                Point(x: 1, y: 1, z: 3),
+            ] {
+                let normalized = try #require(projection.normalized(point))
+                let back = projection.eye(Point(x: normalized.x, y: normalized.y), distance: -point.z)
+                #expect(abs(back.x - point.x) <= 1e-12 * 30 && abs(back.y - point.y) <= 1e-12 * 30 && back.z == point.z)
+                let full = try #require(projection.eye(normalized))
+                #expect(abs(full.x - back.x) <= 1e-9 && abs(full.y - back.y) <= 1e-9)
+            }
+        }
+
+        @Test(arguments: [
+            Point<3, Double>(x: 0, y: 0, z: -5), Point(x: 3, y: 0, z: -5), Point(x: -7, y: 0, z: -4), Point(x: 2, y: 0, z: -1.5),
+        ])
+        func `A ball's perspective radius is half the width of its projected silhouette`(center: Point<3, Double>) throws {
+            let projection = try projection(.perspective, .unit)
+            let radius = 1.0
+            let measured = try #require(projection.radius(of: radius, at: center))
+            let distance = center.coordinates.length
+            let axis = center.coordinates.scaled(by: 1 / distance)
+            let foot = center.coordinates.scaled(by: 1 - radius * radius / (distance * distance))
+            let rim = radius * (distance * distance - radius * radius).squareRoot() / distance
+            let first = Vector<3, Double>(x: 0, y: 1, z: 0)
+            let second = axis.cross(first)
+            var (lowest, highest) = (Double.infinity, -Double.infinity)
+            for angle in stride(from: 0, to: 2 * Double.pi, by: Double.pi / 3600) {
+                let point = foot + first.scaled(by: rim * cos(angle)) + second.scaled(by: rim * sin(angle))
+                let projected = try #require(projection.normalized(Point(coordinates: point)))
+                lowest = min(lowest, projected.y)
+                highest = max(highest, projected.y)
+            }
+            #expect(abs((highest - lowest) / 2 - measured) <= 1e-6 * measured)
+            if center.x == 0 {
+                let alpha = asin(radius / distance)
+                #expect(abs(measured - projection.coefficients[1][1] * tan(alpha)) <= 1e-12)
+            }
+        }
+
+        @Test
+        func `A ball's orthographic radius is its radius at the vertical scale`() throws {
+            let projection = try projection(.orthographic, .symmetric)
+            let center = Point<3, Double>(x: 3, y: -1, z: 20)
+            let measured = try #require(projection.radius(of: 2, at: center))
+            let top = try #require(projection.normalized(Point(x: 3, y: 1, z: 20)))
+            let bottom = try #require(projection.normalized(Point(x: 3, y: -3, z: 20)))
+            #expect(abs((top.y - bottom.y) / 2 - measured) <= 1e-15)
+        }
+
+        @Test
+        func `A ball's radius has none for a ball reaching the eye's plane or a bad radius`() throws {
+            let perspective = try projection(.perspective, .unit)
+            #expect(perspective.radius(of: 1, at: Point(x: 0, y: 0, z: -1)) == nil)
+            #expect(perspective.radius(of: 1, at: Point(x: 5, y: 0, z: 0.5)) == nil)
+            #expect(perspective.radius(of: -1, at: Point(x: 0, y: 0, z: -5)) == nil)
+            #expect(perspective.radius(of: .nan, at: Point(x: 0, y: 0, z: -5)) == nil)
+            #expect(perspective.radius(of: 0, at: Point(x: 0, y: 0, z: -5)) == 0)
+            let viewport = try Projection<Double>.Viewport(x: 0, y: 0, width: 1920, height: 1080, direction: .down)
+            let normalized = try #require(perspective.radius(of: 1, at: Point(x: 0, y: 0, z: -5)))
+            #expect(perspective.radius(of: 1, at: Point(x: 0, y: 0, z: -5), in: viewport) == normalized * 540)
+        }
+
+        @Test
+        func `Interpolation gives the ends at 0 and 1 and the middle bounds at a half`() throws {
+            let first = try projection(.perspective, .unit)
+            let second = try Projection<Double>(.perspective, left: -4, right: 2, bottom: -3, top: 1, near: 1.5, far: 40, depth: .unit)
+            #expect(first.interpolated(to: second, at: 0) == first)
+            #expect(first.interpolated(to: second, at: 1) == second)
+            let middle = first.interpolated(to: second, at: 0.5)
+            #expect(middle == (try Projection(.perspective, left: -3, right: 4, bottom: -2, top: 2, near: 1, far: 40, depth: .unit)))
+            #expect(first.interpolated(to: first, at: 0.3) == first)
+        }
+
+        @Test
+        func `Interpolation between kinds or depth ranges steps at 1`() throws {
+            let perspective = try projection(.perspective, .unit)
+            let orthographic = try projection(.orthographic, .unit)
+            let symmetric = try projection(.perspective, .symmetric)
+            #expect(perspective.interpolated(to: orthographic, at: 0.5) == perspective)
+            #expect(perspective.interpolated(to: orthographic, at: 0.999) == perspective)
+            #expect(perspective.interpolated(to: orthographic, at: 1) == orthographic)
+            #expect(perspective.interpolated(to: symmetric, at: 0.5) == perspective)
+            #expect(perspective.interpolated(to: symmetric, at: 1) == symmetric)
+        }
+
+        @Test
+        func `Interpolation keeps an infinite far plane and steps where no volume results`() throws {
+            let finite = try projection(.perspective, .unit)
+            let infinite = try projection(.perspective, .unit, far: .infinity)
+            #expect(finite.interpolated(to: infinite, at: 0) == finite)
+            #expect(finite.interpolated(to: infinite, at: 0.5).far == .infinity)
+            #expect(finite.interpolated(to: infinite, at: 1) == infinite)
+            let wide = try Projection<Double>(.perspective, left: -2, right: 6, bottom: -1, top: 3, near: 30, far: 40, depth: .unit)
+            #expect(finite.interpolated(to: wide, at: -1) == finite)
+            #expect(finite.interpolated(to: wide, at: 3) == wide)
+        }
+    }
+}

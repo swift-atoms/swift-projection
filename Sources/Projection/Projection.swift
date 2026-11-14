@@ -56,16 +56,20 @@ extension Projection {
             case (.symmetric, true):
                 rows[2][2] = -(far + near) / range
                 rows[2][3] = -2 * far * near / range
+
             case (.symmetric, false):
                 rows[2][2] = -1
                 rows[2][3] = -2 * near
+
             case (.unit, true):
                 rows[2][2] = -far / range
                 rows[2][3] = -far * near / range
+
             case (.unit, false):
                 rows[2][2] = -1
                 rows[2][3] = -near
             }
+
         case .orthographic:
             rows[0][0] = 2 / width
             rows[0][3] = -(right + left) / width
@@ -76,6 +80,7 @@ extension Projection {
             case .symmetric:
                 rows[2][2] = -2 / range
                 rows[2][3] = -(far + near) / range
+
             case .unit:
                 rows[2][2] = -1 / range
                 rows[2][3] = -near / range
@@ -115,12 +120,101 @@ extension Projection {
                 y: (normalized.y * w - rows[1][2] * z) / rows[1][1],
                 z: z
             )
+
         case .orthographic:
             return Point(
                 x: (normalized.x - rows[0][3]) / rows[0][0],
                 y: (normalized.y - rows[1][3]) / rows[1][1],
                 z: (normalized.z - rows[2][3]) / rows[2][2]
             )
+        }
+    }
+}
+
+extension Projection {
+
+    /// The eye-space point a `distance` ahead of the eye, at z = −`distance`, whose normalised x and y
+    /// are the ones given: the inverse of `normalized(_:)` for a known distance, so that the x and y of
+    /// `normalized(eye(n, distance: d))` are `n`, and `eye` of the x and y of `normalized(p)` at distance
+    /// −`p.z` is `p`, up to rounding. In a perspective projection the point lies on the
+    /// line through the eye and the window point, `distance · (n.x + c02, n.y + c12) / (c00, c11)` across
+    /// for the coefficients c; a negative distance gives the mirrored point behind the eye that projects
+    /// to the same coordinates, and a distance of zero the eye itself, which projects nowhere. In an
+    /// orthographic projection x and y do not depend on the distance.
+    public func eye(_ normalized: Point<2, Scalar>, distance: Scalar) -> Point<3, Scalar> {
+        let rows = coefficients
+        let z = -distance
+        switch kind {
+        case .perspective:
+            return Point(
+                x: (normalized.x * distance - rows[0][2] * z) / rows[0][0],
+                y: (normalized.y * distance - rows[1][2] * z) / rows[1][1],
+                z: z
+            )
+
+        case .orthographic:
+            return Point(
+                x: (normalized.x - rows[0][3]) / rows[0][0],
+                y: (normalized.y - rows[1][3]) / rows[1][1],
+                z: z
+            )
+        }
+    }
+
+    /// How large the projection draws a ball of a radius about an eye-space centre, in normalised units of
+    /// y: half the width of its outline across the line from the view axis to the outline's centre.
+    ///
+    /// In a perspective projection the outline is the exact silhouette, where the cone of sight lines that
+    /// graze the ball meets the picture plane: an ellipse drawn out along the line from the axis, whose half
+    /// width across that line is `c11 · radius / √(z² − radius²)`, which equals `c11 · sin α / √(cos² θ −
+    /// sin² α)` for a centre at distance d, θ off the axis, and sin α = radius / d. On the axis that is
+    /// `c11 · tan α`, the radius of a circle. Off the axis it is not the half length along the line, which is
+    /// longer, and it is not the small-angle `c11 · radius / −z`. It is nil when the ball reaches the plane
+    /// of the eye or behind it, −z ≤ radius. In an orthographic projection it is `c11 · radius`. Either is nil
+    /// for a radius that is negative or not finite. The unit is the vertical one: in normalised x the same
+    /// length is `c00 / c11` times as long, so in a viewport the outline measures the same both ways only
+    /// when the viewport's aspect equals the window's.
+    public func radius(of radius: Scalar, at center: Point<3, Scalar>) -> Scalar? {
+        guard radius >= 0, radius.isFinite else { return nil }
+        let scale = coefficients[1][1]
+        guard kind == .perspective else { return scale * radius }
+        let ahead = -center.z
+        guard ahead > radius else { return nil }
+        let room = ((ahead - radius) * (ahead + radius)).squareRoot()
+        guard room > 0 else { return nil }
+        return scale * radius / room
+    }
+
+    /// `radius(of:at:)` in the units of a viewport: times half the viewport's height.
+    public func radius(of radius: Scalar, at center: Point<3, Scalar>, in viewport: Viewport) -> Scalar? {
+        self.radius(of: radius, at: center).map { $0 * viewport.height / 2 }
+    }
+
+    /// The projection a share of the way to another of the same kind and depth range: each bound
+    /// `self · (1 − share) + other · share`, a bound the two share kept as it is, so a share of 0 gives
+    /// this projection and a share of 1 the other exactly. For shares between 0 and 1 the result is
+    /// always a valid projection; an infinite far plane mixed with a finite one stays infinite. Two
+    /// projections of different kinds or depth ranges, or a share outside 0 to 1 whose bounds make no
+    /// view volume, give no mix: this projection below a share of 1 and the other from 1 on.
+    public func interpolated(to other: Self, at share: Scalar) -> Self {
+        if share == 0 { return self }
+        if share == 1 { return other }
+        let step = share < 1 ? self : other
+        guard kind == other.kind, depth == other.depth else { return step }
+        func along(_ a: Scalar, _ b: Scalar) -> Scalar { a == b ? a : a * (1 - share) + b * share }
+        do throws(Error) {
+            return try Self(
+                kind,
+                left: along(left, other.left),
+                right: along(right, other.right),
+                bottom: along(bottom, other.bottom),
+                top: along(top, other.top),
+                near: along(near, other.near),
+                far: along(far, other.far),
+                depth: depth
+            )
+        } catch {
+            return step
         }
     }
 }
